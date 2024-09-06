@@ -117,17 +117,24 @@ def save_system_prompt(file_path, content):
 
 def generate_summary(operator_id, user_prompt, system_prompt):
     try:
-        print(f"Generating summary for operator: {operator_id}")
-        print(f"User prompt: {user_prompt}")
-        print(f"System prompt: {system_prompt}")
+        print(f"\n--- Generating summary for operator: {operator_id} ---")
         api_key = st.secrets["openai_api_key"]
+        
+        print("Sending request to OpenAI with:")
+        print(f"User prompt: {json.dumps(user_prompt, indent=2)}")
+        print(f"System prompt: {system_prompt}")
+        
         summary, _, _ = chat_with_model(
             api_key,
             user_message_content=json.dumps(user_prompt),
             system_message_content=system_prompt,
             model="gpt-4o-mini"
         )
-        print(f"Generated summary: {summary}")
+        
+        print("\nResponse from OpenAI:")
+        print(summary)
+        print("--- End of OpenAI response ---\n")
+        
         return summary
     except Exception as e:
         print(f"Error in generate_summary: {str(e)}")
