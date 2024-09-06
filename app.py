@@ -9,8 +9,9 @@ import pandas as pd
 from openai_utils import chat_with_model, print_token_usage_summary
 import traceback
 import logging
+import sys
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stderr)
 
 st.set_page_config(layout="wide")
 
