@@ -1,0 +1,37 @@
+# Ignore Python bytecode files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment folders
+env/
+venv/
+myenv/
+.venv/
+
+# Jupyter Notebook checkpoints (if you use Jupyter)
+.ipynb_checkpoints/
+
+# Ignore any OS-specific files
+.DS_Store
+Thumbs.db
+
+# Secrets file (keep this local; it's stored in Streamlit Cloud instead)
+.streamlit/secrets.toml
+
+# Logs
+*.log
+
+# Ignore any test reports, coverage reports, etc.
+coverage/
+*.cover
+*.py,cover
+.cache
+nosetests.xml
+coverage.xml
+*.log
+
+# Ignore package files if you use a package manager like pipenv or poetry
+Pipfile
+Pipfile.lock
+poetry.lock
