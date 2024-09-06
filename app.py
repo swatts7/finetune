@@ -302,7 +302,7 @@ def show_detailed_review(operator_id, system_prompt):
 def main():
     
     if not st.session_state["password_correct"]:
-    if not check_password():
+        if not check_password():
             st.stop()
         else:
             st.success("Password correct. Access granted.")
