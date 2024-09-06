@@ -117,6 +117,9 @@ def save_system_prompt(file_path, content):
 
 def generate_summary(operator_id, user_prompt, system_prompt):
     try:
+        print(f"Generating summary for operator: {operator_id}")
+        print(f"User prompt: {user_prompt}")
+        print(f"System prompt: {system_prompt}")
         api_key = st.secrets["openai_api_key"]
         summary, _, _ = chat_with_model(
             api_key,
@@ -124,8 +127,10 @@ def generate_summary(operator_id, user_prompt, system_prompt):
             system_message_content=system_prompt,
             model="gpt-4o-mini"
         )
+        print(f"Generated summary: {summary}")
         return summary
     except Exception as e:
+        print(f"Error in generate_summary: {str(e)}")
         st.error(f"Error generating summary: {str(e)}")
         return ""
 
@@ -229,11 +234,15 @@ def show_detailed_view(operator_id, comments_data_df, outputs_df, system_prompt)
 
     def generate_summary_callback():
         try:
+            print("Generate summary button clicked")
             user_prompt_dict = json.loads(edited_user_prompt)
             new_summary = generate_summary(operator_id, user_prompt_dict, system_prompt)
+            print(f"New summary generated: {new_summary}")
             st.session_state["generated_summary"] = new_summary
             save_output(operator_id, new_summary, st.session_state.get("is_approved", False))
             st.success("Summary generated and saved successfully!")
+            print("About to rerun")
+            st.experimental_rerun()
         except json.JSONDecodeError:
             st.error("Invalid JSON format in User Prompt.")
         except Exception as e:
