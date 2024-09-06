@@ -218,7 +218,7 @@ def generate_summary(operator_id, system_prompt):
                 api_key,
                 user_message_content=user_message_content,
                 system_message_content=system_prompt,
-                model="gpt-4-mini"  # Changed from "gpt-4o-mini" to a known available model
+                model="gpt-4o-mini"  # Changed from "gpt-4o-mini" to a known available model
             )
             
             st.write("Received response from OpenAI.")
