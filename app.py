@@ -14,7 +14,9 @@ st.set_page_config(layout="wide")
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Password checking function
+if 'password_correct' not in st.session_state:
+    st.session_state['password_correct'] = False
+
 def check_password():
     """Returns `True` if the user had the correct password."""
 
@@ -26,36 +28,16 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    elif not st.session_state["password_correct"]:
-        # Password incorrect, show input + error.
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 Password incorrect")
-        return False
-    else:
-        # Password correct.
+    if st.session_state["password_correct"]:
         return True
 
-# Ensure secrets are loaded correctly
-try:
-    secret_password = st.secrets["general"]["password"]
-except KeyError:
-    st.error("No password found in secrets. Please configure the secrets.toml file correctly.")
-    st.stop()
-
-# Check password
-if not check_password():
-    st.stop()
-
-# If password is correct, proceed with the rest of the app
-st.success("Password correct. Access granted.")
+    # Show input for password.
+    st.text_input(
+        "Password", type="password", on_change=password_entered, key="password"
+    )
+    if "password" in st.session_state:
+        st.error("😕 Password incorrect")
+    return False
 
 def generate_jsonl_data(system_prompt):
     data = []
@@ -319,7 +301,11 @@ def show_detailed_review(operator_id, system_prompt):
 
 def main():
     
-
+    if not st.session_state["password_correct"]:
+    if not check_password():
+            st.stop()
+        else:
+            st.success("Password correct. Access granted.")
     st.header("Review Meta Summary Editor")
 
     with open("review_meta/system_prompt.txt", "r", encoding="utf-8") as f:
