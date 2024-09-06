@@ -7,50 +7,6 @@ from openai_utils import chat_with_model
 
 st.set_page_config(layout="wide")
 
-# Password hashing function
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# Password checking function
-def check_password():
-    """Returns `True` if the user had the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if hash_password(st.session_state["password"]) == st.secrets["general"]["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # First run, show input for password.
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        return False
-    elif not st.session_state["password_correct"]:
-        # Password incorrect, show input + error.
-        st.text_input(
-            "Password", type="password", on_change=password_entered, key="password"
-        )
-        st.error("😕 Password incorrect")
-        return False
-    else:
-        # Password correct.
-        return True
-
-# Ensure secrets are loaded correctly
-try:
-    secret_password = st.secrets["general"]["password"]
-except KeyError:
-    st.error("No password found in secrets. Please configure the secrets.toml file correctly.")
-    st.stop()
-
-# Check password
-if not check_password():
-    st.stop()
-
 # If password is correct, proceed with the rest of the app
 st.success("Password correct. Access granted.")
 
