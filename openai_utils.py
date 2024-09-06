@@ -133,8 +133,7 @@ def main():
     # Set up logging
     logging.basicConfig(level=logging.INFO)
 
-    # Your OpenAI API key (replace with your actual key)
-    api_key = "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"
+    # Your OpenAI API key (replace with your actual key
 
     # Initialize conversation history
     conversation_history = []
