@@ -1,309 +1,292 @@
 import streamlit as st
+import pandas as pd
 import json
-import os
-import re
 import io
 import hashlib
-import csv
-import pandas as pd
-from openai_utils import chat_with_model, print_token_usage_summary
+from openai_utils import chat_with_model
 
 st.set_page_config(layout="wide")
 
-def generate_jsonl_data(system_prompt):
+def generate_jsonl_data():
     data = []
-    for review in st.session_state['processed_reviews']:
-        operator_id = review.get('operator_id', 'N/A')
-        user_message = json.dumps(review.get('unique_reviews', []))
-        output, _ = load_review(operator_id)
+    summary_data = load_summary_data()
+    outputs_df = load_outputs_data()
+    system_prompt = load_system_prompt("comments_meta\\system_prompt.txt")
 
-        data.append({
-            "system_message": system_prompt,
-            "user_message": user_message,
-            "output": output
-        })
+    for _, row in summary_data.iterrows():
+        operator_id = row['operator_id']
+        operator_name = row['operator_name']
+        
+        # Create the user prompt using available data
+        user_prompt = {
+            "operator_id": operator_id,
+            "operator_name": operator_name,
+            "total_comments": row['total_comments'],
+            "average_sentiment_mean": row['average_sentiment_mean'],
+            "average_sentiment_median": row['average_sentiment_median'],
+            "top_positive_mentions": row['top_positive_mentions'],
+            "top_negative_mentions": row['top_negative_mentions'],
+            "top_positive_comments": row['top_positive_comments'],
+            "top_negative_comments": row['top_negative_comments']
+        }
+
+        # Fetch the generated summary for this operator
+        generated_summary = outputs_df[outputs_df['operator_id'] == operator_id]['comments_summary'].values[0] if not outputs_df[outputs_df['operator_id'] == operator_id].empty else ""
+
+        # Add the conversation structure for JSONL
+        conversation = {
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": json.dumps(user_prompt, indent=2)},
+                {"role": "assistant", "content": generated_summary}
+            ]
+        }
+
+        data.append(conversation)
 
     return data
 
-def download_jsonl_button():
-    with open("review_meta/system_prompt.txt", "r", encoding="utf-8") as f:
-        system_prompt = f.read()
-
-    data = generate_jsonl_data(system_prompt)
-    buffer = io.StringIO()
-    for entry in data:
-        buffer.write(json.dumps(entry) + '\n')
-    buffer.seek(0)
-
-    st.download_button(
-        label="Download JSONL",
-        data=buffer.getvalue(),
-        file_name="operator_reviews.jsonl",
-        mime="application/json"
-    )
-
-def generate_csv_data(system_prompt):
-    data = []
-    for review in st.session_state['processed_reviews']:
-        operator_id = review.get('operator_id', 'N/A')
-        user_message = json.dumps(review.get('unique_reviews', []))
-        output, _ = load_review(operator_id)
-
-        data.append({
-            "operator_id": operator_id,
-            "system_message": system_prompt,
-            "user_message": user_message,
-            "output": output
-        })
-
-    df = pd.DataFrame(data, columns=['operator_id', 'system_message', 'user_message', 'output'])
-    return df
-
-def download_csv_button():
-    with open("review_meta/system_prompt.txt", "r", encoding="utf-8") as f:
-        system_prompt = f.read()
-
-    df = generate_csv_data(system_prompt)
-    buffer = io.StringIO()
-    df.to_csv(buffer, index=False, encoding='utf-8', quoting=csv.QUOTE_NONNUMERIC)
-    buffer.seek(0)
-
-    st.download_button(
-        label="Download CSV",
-        data=buffer.getvalue(),
-        file_name="operator_reviews.csv",
-        mime="text/csv"
-    )
-
-def calculate_operator_statistics(reviews):
-    valid_scores = [float(review.get('normalized_score', 0)) for review in reviews 
-                    if review.get('normalized_score') not in [None, 'N/A'] and 0 <= float(review.get('normalized_score', 0)) <= 1]
-    
-    num_reviews = len(reviews)
-    
-    if valid_scores:
-        total_score = sum(valid_scores)
-        average_score = total_score / len(valid_scores) if len(valid_scores) > 0 else 0
-        median_score = sorted(valid_scores)[len(valid_scores) // 2]
-    else:
-        average_score, median_score = 0, 0
-    
-    return num_reviews, average_score, median_score
-
-if 'processed_reviews' not in st.session_state:
-    with open("review_meta/processed_reviews.json", "r", encoding="utf-8") as f:
-        st.session_state['processed_reviews'] = json.load(f)
-
-def clean_text(text):
-    if isinstance(text, str):
-        return text
-    return str(text)
-
-def ensure_directory_exists(path):
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-def save_review(operator_id, output, is_approved):
-    review_data = {
-        "output": output,
-        "is_approved": is_approved
-    }
-    ensure_directory_exists("reviews")
-    with open(f"reviews/{operator_id}.json", "w") as f:
-        json.dump(review_data, f)
-
-def load_review(operator_id):
+# Utility functions
+def load_outputs_data():
     try:
-        with open(f"reviews/{operator_id}.json", "r") as f:
-            review_data = json.load(f)
-        return review_data["output"], review_data["is_approved"]
+        df = pd.read_csv("comments_meta/outputs.csv")
+        return df
     except FileNotFoundError:
-        return "", False
+        return pd.DataFrame(columns=['operator_name', 'operator_id', 'comments_summary', 'is_approved'])
+
+def save_output(operator_id, comments_summary, is_approved):
+    df = load_outputs_data()
+    existing_row = df[df['operator_id'] == operator_id]
+    
+    if not existing_row.empty:
+        # Update existing row
+        df.loc[df['operator_id'] == operator_id, 'comments_summary'] = comments_summary
+        df.loc[df['operator_id'] == operator_id, 'is_approved'] = is_approved
+    else:
+        # Add new row
+        new_row = pd.DataFrame({
+            'operator_name': [''],  # Leave blank, it will be filled later if needed
+            'operator_id': [operator_id],
+            'comments_summary': [comments_summary],
+            'is_approved': [is_approved]
+        })
+        df = pd.concat([df, new_row], ignore_index=True)
+    
+    df.to_csv("comments_meta/outputs.csv", index=False)
+
+def load_summary_data():
+    try:
+        with open("comments_meta/comments_data.json", 'r') as f:
+            json_data = json.load(f)
+
+        # Convert JSON into a flat DataFrame
+        records = []
+        for operator_id, operator_data in json_data.items():
+            record = {
+                'operator_id': operator_id,
+                'operator_name': operator_data.get('casino_name', ''),
+                'total_comments': operator_data.get('total_comments', 0),
+                'average_sentiment_mean': operator_data.get('average_sentiment', {}).get('mean', None),
+                'average_sentiment_median': operator_data.get('average_sentiment', {}).get('median', None),
+                'top_positive_mentions': operator_data.get('contextual_analysis', {}).get('top_positive_mentions', {}),
+                'top_negative_mentions': operator_data.get('contextual_analysis', {}).get('top_negative_mentions', {}),
+                'top_positive_comments': operator_data.get('top_comments', {}).get('positive', []),
+                'top_negative_comments': operator_data.get('top_comments', {}).get('negative', [])
+            }
+            records.append(record)
+
+        # Convert the list of records into a DataFrame
+        df = pd.DataFrame(records)
+        return df
+
+    except FileNotFoundError:
+        st.error("Comments data file not found.")
+        return pd.DataFrame()
+
+def load_system_prompt(file_path):
+    try:
+        with open(file_path, 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        st.error(f"System prompt file not found: {file_path}")
+        return ""
+
+def save_system_prompt(file_path, content):
+    with open(file_path, 'w') as f:
+        f.write(content)
+
+def generate_summary(operator_id, user_prompt, system_prompt):
+    try:
+        api_key = st.secrets["openai_api_key"]
+        summary, _, _ = chat_with_model(
+            api_key,
+            user_message_content=json.dumps(user_prompt),
+            system_message_content=system_prompt,
+            model="gpt-4o-mini"
+        )
+        return summary
+    except Exception as e:
+        st.error(f"Error generating summary: {str(e)}")
+        return ""
 
 def make_clickable(operator_id):
     return f'<a href="?operator_id={operator_id}" target="_self">{operator_id}</a>'
 
-def load_and_update_dataframe():
-    pd.set_option('display.max_colwidth', None)
-    df = pd.read_csv("outputs.csv")
-    
-    for index, row in df.iterrows():
-        output, is_approved = load_review(row['operator_id'])
-        df.at[index, 'review_summary'] = clean_text(output) if output else ''
-        df.at[index, 'is_approved'] = is_approved
+def download_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
 
-        selected_operator = next((review for review in st.session_state['processed_reviews'] if review['operator_id'] == row['operator_id']), None)
-        if selected_operator:
-            num_reviews, average_score, median_score = calculate_operator_statistics(selected_operator['unique_reviews'])
-            df.at[index, 'num_reviews'] = num_reviews
-            df.at[index, 'average_score'] = round(average_score, 2)
-            df.at[index, 'median_score'] = round(median_score, 2)
-    
-    df['operator_id'] = df['operator_id'].apply(make_clickable)
-    return df
-
-def save_dataframe(df):
-    df['operator_id'] = df['operator_id'].apply(lambda x: x.split('>')[1].split('<')[0] if '>' in x else x)
-    df.to_csv("outputs.csv", index=False)
-
-def update_outputs_csv(operator_id, output, is_approved):
-    df = pd.read_csv("outputs.csv")
-    df.loc[df['operator_id'] == operator_id, 'review_summary'] = clean_text(output)[:100] + '...'
-    df.loc[df['operator_id'] == operator_id, 'is_approved'] = is_approved
-    save_dataframe(df)
-
-def format_reviews(reviews):
-    formatted_reviews = ""
-    for i, review in enumerate(reviews, 1):
-        formatted_reviews += f"Review {i}:\n"
-        formatted_reviews += f"Summary: {clean_text(review.get('review_summary', 'No summary available'))}\n\n"
-        
-        normalized_score = review.get('normalized_score', 'N/A')
-        if normalized_score == 'N/A' or normalized_score is None:
-            formatted_score = 'null'
-        else:
-            try:
-                score_float = float(normalized_score)
-                if score_float == 0 or score_float > 1:
-                    formatted_score = 'null'
-                else:
-                    formatted_score = f"{score_float:.2f}"
-            except ValueError:
-                formatted_score = 'null'
-        
-        formatted_reviews += f"Normalized Score: {formatted_score}\n\n"
-        
-        pros = review.get('pros', [])
-        if pros:
-            formatted_reviews += "Pros:\n"
-            for pro in pros:
-                formatted_reviews += f"- {clean_text(pro)}\n"
-        else:
-            formatted_reviews += "Pros: None listed\n"
-        
-        cons = review.get('cons', [])
-        if cons:
-            formatted_reviews += "\nCons:\n"
-            for con in cons:
-                formatted_reviews += f"- {clean_text(con)}\n"
-        else:
-            formatted_reviews += "\nCons: None listed\n"
-        
-        quotes = review.get('quotes', [])
-        if quotes:
-            formatted_reviews += "\nQuotes:\n"
-            full_quote = " ".join([clean_text(q) for q in quotes])
-            formatted_quotes = re.split(r'(?<=[.!?])\s+', full_quote)
-            for quote in formatted_quotes:
-                if quote:
-                    formatted_reviews += f"- {quote}\n"
-        else:
-            formatted_reviews += "\nQuotes: None available\n"
-        
-        formatted_reviews += f"\nSource: {review.get('review_source_url', 'No source URL available')}\n\n"
-        formatted_reviews += "-" * 50 + "\n\n"
-    
-    return formatted_reviews
-
-def generate_summary(operator_id, system_prompt):
-    selected_operator = next((review for review in st.session_state['processed_reviews'] if review['operator_id'] == operator_id), None)
-    if selected_operator:
-        try:
-            api_key = st.secrets["openai_api_key"]
-            regenerated_output, _, _ = chat_with_model(
-                api_key,
-                user_message_content=json.dumps(selected_operator['unique_reviews']),
-                system_message_content=system_prompt,
-                model="gpt-4o-mini"
-            )
-            save_review(operator_id, regenerated_output, False)
-            update_outputs_csv(operator_id, regenerated_output, False)
-            return True, regenerated_output
-        except Exception as e:
-            print(f"Error generating summary: {str(e)}")
-            return False, ""
-    return False, ""
-
-def show_detailed_review(operator_id, system_prompt):
-    st.header(f"{operator_id}")
-
-    selected_operator = next((review for review in st.session_state['processed_reviews'] if review['operator_id'] == operator_id), None)
-
-    if selected_operator:
-        num_reviews, average_score, median_score = calculate_operator_statistics(selected_operator['unique_reviews'])
-
-        st.write(f"**Total Number of Reviews:** {num_reviews}")
-        st.write(f"**Average Score:** {average_score:.2f}")
-        st.write(f"**Median Score:** {median_score:.2f}")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("OPENAI INPUT")
-            formatted_reviews = format_reviews(selected_operator['unique_reviews'])
-            st.text_area("Reviews", formatted_reviews, height=400)
-
-        with col2:
-            st.subheader("OPENAI Output")
-            edited_output, is_approved = load_review(operator_id)
-            edited_output = st.text_area("Edit Desired Output", edited_output, height=400, key="desired_output")
-            
-            is_approved = st.checkbox("Mark as Approved", value=is_approved)
-            
-            if st.button("Save Changes"):
-                save_review(operator_id, edited_output, is_approved)
-                update_outputs_csv(operator_id, edited_output, is_approved)
-                st.success("Changes saved successfully!")
-            
-            if st.button("Regenerate"):
-                success, regenerated_output = generate_summary(operator_id, system_prompt)
-                if success:
-                    edited_output = regenerated_output
-                    st.success("Summary regenerated successfully!")
-                    st.rerun()
-                else:
-                    st.error("Failed to regenerate summary.")
-
-        if st.button("Back to Overview"):
-            st._set_query_params()
-            st.rerun()
-    else:
-        st.error("Selected operator not found.")
+def download_jsonl_button():
+    data = generate_jsonl_data()
+    buffer = io.StringIO()
+    for entry in data:
+        buffer.write(json.dumps(entry) + "\n")
+    buffer.seek(0)
+    st.download_button(
+        label="Download JSONL",
+        data=buffer.getvalue(),
+        file_name="operator_summaries.jsonl",
+        mime="application/json"
+    )
 
 def main():
-    
-    st.header("Review Meta Summary Editor")
+    st.title("Operator Comments Summary")
 
-    with open("review_meta/system_prompt.txt", "r", encoding="utf-8") as f:
-        system_prompt = f.read()
+    summary_data = load_summary_data()
+    outputs_df = load_outputs_data()
+    system_prompt = load_system_prompt("comments_meta/system_prompt.txt")
 
     with st.expander("Edit System Prompt"):
-        edited_system_prompt = st.text_area("Edit System Prompt", system_prompt, height=300)
-
+        edited_system_prompt = st.text_area("System Prompt", system_prompt, height=200)
+        
         col1, col2 = st.columns(2)
         with col1:
             if st.button("Save System Prompt"):
-                try:
-                    with open("review_meta/system_prompt.txt", "w", encoding="utf-8") as f:
-                        f.write(edited_system_prompt)
-                    st.success("System prompt saved successfully!")
-                    system_prompt = edited_system_prompt
-                except Exception as e:
-                    st.error(f"An error occurred while saving the system prompt: {str(e)}")
-
+                save_system_prompt("comments_meta/system_prompt.txt", edited_system_prompt)
+                st.success("System prompt saved successfully!")
         with col2:
-            if st.button("Cancel"):
+            if st.button("Reset System Prompt"):
                 st.rerun()
 
     params = st.query_params
     if 'operator_id' in params:
-        show_detailed_review(params['operator_id'], system_prompt)
+        operator_id = params['operator_id']
+        show_detailed_view(operator_id, summary_data, outputs_df, edited_system_prompt)
     else:
-        st.subheader("Operator Overview")
-        df = load_and_update_dataframe()
-        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
-        download_csv_button()
-        download_jsonl_button()
+        show_overview_table(outputs_df)
+
+def show_overview_table(outputs_df):
+    st.subheader("Operator Comments Overview")
+
+    if outputs_df.empty:
+        st.error("No data available in the CSV.")
+        return
+
+    required_columns = ['operator_name', 'operator_id', 'comments_summary', 'is_approved']
+    available_columns = [col for col in required_columns if col in outputs_df.columns]
+
+    if len(available_columns) < len(required_columns):
+        missing_columns = set(required_columns) - set(available_columns)
+        st.warning(f"Some columns are missing in CSV data: {', '.join(missing_columns)}")
+
+    if 'operator_id' in available_columns:
+        outputs_df['operator_id'] = outputs_df['operator_id'].apply(make_clickable)
+
+    # Display the table with available columns
+    st.write(outputs_df[available_columns].to_html(escape=False, index=False), unsafe_allow_html=True)
+
+    # Download CSV button
+    csv = download_csv(outputs_df[available_columns])
+    st.download_button(
+        label="Download CSV",
+        data=csv,
+        file_name="operator_comments_summary.csv",
+        mime="text/csv"
+    )
+
+    # Download JSONL button
+    download_jsonl_button()
+def show_detailed_view(operator_id, comments_data_df, outputs_df, system_prompt):
+    st.subheader(f"Operator: {operator_id}")
+
+    operator_id = str(operator_id)
+    operator_data = comments_data_df[comments_data_df['operator_id'] == operator_id]
+
+    if operator_data.empty:
+        st.warning(f"No user data found for operator_id: {operator_id}")
+        user_prompt = "{}"
+    else:
+        user_prompt_data = operator_data.to_dict(orient="records")[0]
+        user_prompt = json.dumps(user_prompt_data, indent=2)
+
+    operator_row = outputs_df[outputs_df['operator_id'] == operator_id]
+
+    # Initialize session state if it doesn't exist
+    if "generated_summary" not in st.session_state:
+        if not operator_row.empty and 'comments_summary' in operator_row.columns:
+            st.session_state["generated_summary"] = operator_row['comments_summary'].iloc[0]
+        else:
+            st.session_state["generated_summary"] = ""
+
+    def generate_summary_callback():
+        try:
+            user_prompt_dict = json.loads(edited_user_prompt)
+            new_summary = generate_summary(operator_id, user_prompt_dict, system_prompt)
+            st.session_state["generated_summary"] = new_summary
+            save_output(operator_id, new_summary, st.session_state.get("is_approved", False))
+            st.success("Summary generated and saved successfully!")
+        except json.JSONDecodeError:
+            st.error("Invalid JSON format in User Prompt.")
+        except Exception as e:
+            st.error(f"An error occurred while generating the summary: {str(e)}")
+
+    def save_changes_callback():
+        st.session_state["generated_summary"] = generated_summary
+        save_output(operator_id, generated_summary, st.session_state.get("is_approved", False))
+        st.success("Changes saved successfully!")
+        
+        # Force a reload of the outputs data
+        st.session_state['outputs_df'] = load_outputs_data()
+        
+        # Clear the query parameters to go back to the overview
+        st.query_params.clear()
+        st.rerun()
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        edited_user_prompt = st.text_area("User Prompt", value=user_prompt, height=400)
+
+    with col2:
+        try:
+            # Ensure the session state value is a string and handle potential None values
+            summary_value = st.session_state.get("generated_summary", "")
+            if summary_value is None:
+                summary_value = ""
+            elif not isinstance(summary_value, str):
+                summary_value = str(summary_value)
+            
+            generated_summary = st.text_area(
+                "Generated Summary", 
+                value=summary_value,
+                height=400, 
+                key="generated_summary_input"
+            )
+        except Exception as e:
+            st.error(f"Error displaying text area: {str(e)}")
+            generated_summary = ""
+
+    is_approved = operator_row['is_approved'].iloc[0] if not operator_row.empty else False
+    st.session_state["is_approved"] = st.checkbox("Approve Summary", value=is_approved)
+
+    if st.button("Generate Summary", on_click=generate_summary_callback):
+        pass
+
+    if st.button("Save Changes", on_click=save_changes_callback):
+        pass
+
+    if st.button("Back to Overview"):
+        st.query_params.clear()
+        st.rerun()
 
 if __name__ == "__main__":
     main()
