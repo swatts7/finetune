@@ -7,9 +7,6 @@ from openai_utils import chat_with_model
 
 st.set_page_config(layout="wide")
 
-# If password is correct, proceed with the rest of the app
-st.success("Password correct. Access granted.")
-
 def generate_jsonl_data():
     data = []
     summary_data = load_summary_data()
