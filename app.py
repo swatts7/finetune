@@ -214,12 +214,16 @@ def generate_summary(operator_id, system_prompt):
             user_message_content = json.dumps(selected_operator['unique_reviews'])
             
             st.write("Sending request to OpenAI...")
-            regenerated_output, _, _ = chat_with_model(
+            regenerated_output, usage_stats, error = chat_with_model(
                 api_key,
                 user_message_content=user_message_content,
                 system_message_content=system_prompt,
-                model="gpt-4o-mini"  # Changed from "gpt-4o-mini" to a known available model
+                model="gpt-4o-mini"  # Use "gpt-4o" if you want to use the larger model
             )
+            
+            if error:
+                st.error(f"Error from OpenAI: {error}")
+                return False, ""
             
             st.write("Received response from OpenAI.")
             save_review(operator_id, regenerated_output, False)
