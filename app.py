@@ -210,54 +210,61 @@ def format_reviews(reviews):
     return formatted_reviews
 
 def generate_summary(operator_id, system_prompt):
+    logging.info(f"Starting generate_summary for operator: {operator_id}")
     selected_operator = next((review for review in st.session_state['processed_reviews'] if review['operator_id'] == operator_id), None)
     if selected_operator:
         try:
             st.info("Generating summary... Please wait.")
+            logging.info("Attempting to retrieve API key from secrets")
             api_key = st.secrets.get("openai_api_key")
             if not api_key:
+                logging.error("OpenAI API key not found in secrets")
                 st.error("OpenAI API key not found in secrets. Please check your configuration.")
                 return False, ""
             
-            logging.info(f"API Key (first 5 chars): {api_key[:5]}...")
+            logging.info(f"API Key retrieved successfully (first 5 chars): {api_key[:5]}...")
             
             user_message_content = json.dumps(selected_operator['unique_reviews'])
+            logging.info(f"User message content prepared (length: {len(user_message_content)})")
             
             st.write("Sending request to OpenAI...")
-            logging.info(f"System Prompt: {system_prompt[:100]}...")  # Print first 100 characters
-            logging.info(f"User Message Content: {user_message_content[:100]}...")  # Print first 100 characters
+            logging.info("Attempting to send request to OpenAI...")
             
             regenerated_output, usage_stats, error = chat_with_model(
                 api_key,
                 user_message_content=user_message_content,
                 system_message_content=system_prompt,
-                model="gpt-4o-mini"  # Use "gpt-4o" if you want to use the larger model
+                model="gpt-4o-mini"
             )
             
+            logging.info("Request to OpenAI completed")
+            
             if error:
+                logging.error(f"Error from OpenAI: {error}")
                 st.error(f"Error from OpenAI: {error}")
-                logging.error(f"OpenAI API Error: {error}")
                 return False, ""
             
             if not regenerated_output:
+                logging.error("No output received from OpenAI")
                 st.error("No output received from OpenAI.")
-                logging.error("No output received from OpenAI.")
                 return False, ""
             
+            logging.info(f"Received response from OpenAI (length: {len(regenerated_output)})")
             st.write("Received response from OpenAI.")
-            logging.info(f"OpenAI Response: {regenerated_output[:100]}...")  # Print first 100 characters
             
             save_review(operator_id, regenerated_output, False)
             update_outputs_csv(operator_id, regenerated_output, False)
+            logging.info("Summary regenerated and saved successfully")
             st.success("Summary regenerated successfully!")
             return True, regenerated_output
         except Exception as e:
+            logging.error(f"Error in generate_summary: {str(e)}")
+            logging.error(f"Traceback: {traceback.format_exc()}")
             st.error(f"Error generating summary: {str(e)}")
-            logging.error(f"Detailed error: {traceback.format_exc()}")
             return False, ""
     else:
-        st.error("Selected operator not found.")
         logging.error(f"Selected operator not found: {operator_id}")
+        st.error("Selected operator not found.")
     return False, ""
 def show_detailed_review(operator_id, system_prompt):
     st.header(f"{operator_id}")
