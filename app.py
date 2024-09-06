@@ -10,37 +10,6 @@ from openai_utils import chat_with_model, print_token_usage_summary
 
 st.set_page_config(layout="wide")
 
-# Password check at the very beginning
-if 'password_correct' not in st.session_state:
-    st.session_state['password_correct'] = False
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def check_password():
-    if st.session_state["password_correct"]:
-        return True
-
-    def password_entered():
-        if hash_password(st.session_state["password"]) == st.secrets["general"]["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-
-    st.text_input("Password", type="password", on_change=password_entered, key="password")
-    if "password" in st.session_state:
-        st.error("😕 Password incorrect")
-    return False
-
-if not st.session_state["password_correct"]:
-    if not check_password():
-        st.stop()
-    else:
-        st.success("Password correct. Access granted.")
-
-
-
 def generate_jsonl_data(system_prompt):
     data = []
     for review in st.session_state['processed_reviews']:
@@ -303,11 +272,6 @@ def show_detailed_review(operator_id, system_prompt):
 
 def main():
     
-    if not st.session_state["password_correct"]:
-        if not check_password():
-            st.stop()
-        else:
-            st.success("Password correct. Access granted.")
     st.header("Review Meta Summary Editor")
 
     with open("review_meta/system_prompt.txt", "r", encoding="utf-8") as f:
