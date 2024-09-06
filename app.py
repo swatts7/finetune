@@ -10,34 +10,36 @@ from openai_utils import chat_with_model, print_token_usage_summary
 
 st.set_page_config(layout="wide")
 
-# Password hashing function
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
+# Password check at the very beginning
 if 'password_correct' not in st.session_state:
     st.session_state['password_correct'] = False
 
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
 def check_password():
-    """Returns `True` if the user had the correct password."""
-
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        if hash_password(st.session_state["password"]) == st.secrets["general"]["password"]:
-            st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
-        else:
-            st.session_state["password_correct"] = False
-
     if st.session_state["password_correct"]:
         return True
 
-    # Show input for password.
-    st.text_input(
-        "Password", type="password", on_change=password_entered, key="password"
-    )
+    def password_entered():
+        if hash_password(st.session_state["password"]) == st.secrets["general"]["password"]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+
+    st.text_input("Password", type="password", on_change=password_entered, key="password")
     if "password" in st.session_state:
         st.error("😕 Password incorrect")
     return False
+
+if not st.session_state["password_correct"]:
+    if not check_password():
+        st.stop()
+    else:
+        st.success("Password correct. Access granted.")
+
+
 
 def generate_jsonl_data(system_prompt):
     data = []
@@ -329,9 +331,9 @@ def main():
             if st.button("Cancel"):
                 st.rerun()
 
-    params = st._get_query_params()
+    params = st.query_params
     if 'operator_id' in params:
-        show_detailed_review(params['operator_id'][0], system_prompt)
+        show_detailed_review(params['operator_id'], system_prompt)
     else:
         st.subheader("Operator Overview")
         df = load_and_update_dataframe()
