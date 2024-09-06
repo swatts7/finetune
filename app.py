@@ -7,6 +7,10 @@ import io
 import csv
 import pandas as pd
 from openai_utils import chat_with_model, print_token_usage_summary
+import traceback
+import logging
+
+logging.basicConfig(level=logging.INFO)
 
 st.set_page_config(layout="wide")
 
@@ -210,10 +214,19 @@ def generate_summary(operator_id, system_prompt):
     if selected_operator:
         try:
             st.info("Generating summary... Please wait.")
-            api_key = st.secrets["openai_api_key"]
+            api_key = st.secrets.get("openai_api_key")
+            if not api_key:
+                st.error("OpenAI API key not found in secrets. Please check your configuration.")
+                return False, ""
+            
+            logging.info(f"API Key (first 5 chars): {api_key[:5]}...")
+            
             user_message_content = json.dumps(selected_operator['unique_reviews'])
             
             st.write("Sending request to OpenAI...")
+            logging.info(f"System Prompt: {system_prompt[:100]}...")  # Print first 100 characters
+            logging.info(f"User Message Content: {user_message_content[:100]}...")  # Print first 100 characters
+            
             regenerated_output, usage_stats, error = chat_with_model(
                 api_key,
                 user_message_content=user_message_content,
@@ -223,19 +236,29 @@ def generate_summary(operator_id, system_prompt):
             
             if error:
                 st.error(f"Error from OpenAI: {error}")
+                logging.error(f"OpenAI API Error: {error}")
+                return False, ""
+            
+            if not regenerated_output:
+                st.error("No output received from OpenAI.")
+                logging.error("No output received from OpenAI.")
                 return False, ""
             
             st.write("Received response from OpenAI.")
+            logging.info(f"OpenAI Response: {regenerated_output[:100]}...")  # Print first 100 characters
+            
             save_review(operator_id, regenerated_output, False)
             update_outputs_csv(operator_id, regenerated_output, False)
             st.success("Summary regenerated successfully!")
             return True, regenerated_output
         except Exception as e:
             st.error(f"Error generating summary: {str(e)}")
-            print(f"Detailed error: {e}")
+            logging.error(f"Detailed error: {traceback.format_exc()}")
             return False, ""
+    else:
+        st.error("Selected operator not found.")
+        logging.error(f"Selected operator not found: {operator_id}")
     return False, ""
-
 def show_detailed_review(operator_id, system_prompt):
     st.header(f"{operator_id}")
 
